@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sydney Metro Rental Research Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: #f0f4f8; color: #1a202c; }
+
+  .header { background: linear-gradient(135deg, #1a365d 0%, #2b6cb0 100%); color: white; padding: 28px 32px; }
+  .header h1 { font-size: 24px; font-weight: 700; margin-bottom: 6px; }
+  .header p { font-size: 14px; opacity: 0.85; }
+
+  .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+
+  .filters { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 24px; align-items: center; }
+  .filter-group { display: flex; flex-direction: column; gap: 4px; }
+  .filter-group label { font-size: 11px; font-weight: 600; text-transform: uppercase; color: #718096; letter-spacing: 0.5px; }
+  .filter-group select, .filter-group input { padding: 8px 12px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 13px; background: white; }
+
+  .stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
+  .stat-card { background: white; border-radius: 10px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  .stat-card .label { font-size: 12px; color: #718096; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+  .stat-card .value { font-size: 28px; font-weight: 700; color: #1a365d; margin-top: 4px; }
+  .stat-card .sub { font-size: 12px; color: #a0aec0; margin-top: 2px; }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px; }
+  @media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } }
+
+  .card { background: white; border-radius: 10px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  .card h3 { font-size: 16px; font-weight: 600; color: #2d3748; margin-bottom: 16px; }
+
+  .chart-container { position: relative; height: 380px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { background: #edf2f7; padding: 10px 12px; text-align: left; font-weight: 600; color: #4a5568; font-size: 11px; text-transform: uppercase; letter-spacing: 0.3px; position: sticky; top: 0; }
+  td { padding: 10px 12px; border-bottom: 1px solid #edf2f7; }
+  tr:hover td { background: #f7fafc; }
+  .station-name { font-weight: 600; color: #2b6cb0; }
+
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; }
+  .badge-open { background: #c6f6d5; color: #22543d; }
+  .badge-future { background: #fefcbf; color: #744210; }
+  .badge-budget { background: #c6f6d5; color: #22543d; }
+  .badge-affordable { background: #bee3f8; color: #2a4365; }
+  .badge-mid { background: #fefcbf; color: #744210; }
+  .badge-premium { background: #fed7d7; color: #742a2a; }
+  .badge-ultra { background: #e9d8fd; color: #44337a; }
+
+  .hospital-tag { font-size: 11px; color: #718096; }
+
+  .legend { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+  .legend-item { display: flex; align-items: center; gap: 4px; font-size: 12px; color: #4a5568; }
+  .legend-dot { width: 12px; height: 12px; border-radius: 3px; }
+
+  .note { font-size: 12px; color: #a0aec0; font-style: italic; margin-top: 16px; padding: 12px; background: #f7fafc; border-radius: 6px; border-left: 3px solid #cbd5e0; }
+
+  .table-scroll { max-height: 600px; overflow-y: auto; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Sydney Metro — Rental & Hospital Research</h1>
+  <p>Prepared for Ana's move from Toongabbie · Data as of Feb 2026 · 31 stations across 3 line segments</p>
+</div>
+
+<div class="container">
+  <!-- Filters -->
+  <div class="filters">
+    <div class="filter-group">
+      <label>Metro Line</label>
+      <select id="filterLine" onchange="applyFilters()">
+        <option value="all">All Lines</option>
+        <option value="M1 North West">M1 North West</option>
+        <option value="M1 City">M1 City</option>
+        <option value="M1 Southwest">M1 Southwest</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <label>Max 2BR Rent ($/wk)</label>
+      <input type="number" id="filterBudget" placeholder="e.g. 800" onchange="applyFilters()" style="width:120px">
+    </div>
+    <div class="filter-group">
+      <label>Status</label>
+      <select id="filterStatus" onchange="applyFilters()">
+        <option value="all">All</option>
+        <option value="open">Open Now</option>
+        <option value="future">Opening H2 2026</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <label>Price Tier</label>
+      <select id="filterTier" onchange="applyFilters()">
+        <option value="all">All Tiers</option>
+        <option value="Budget">Budget (&lt;$600)</option>
+        <option value="Affordable">Affordable ($600-749)</option>
+        <option value="Mid-Range">Mid-Range ($750-899)</option>
+        <option value="Premium">Premium ($900-1099)</option>
+        <option value="Ultra Premium">Ultra Premium ($1100+)</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-row" id="statsRow">
+    <div class="stat-card"><div class="label">Stations Shown</div><div class="value" id="statCount">31</div><div class="sub">of 31 total</div></div>
+    <div class="stat-card"><div class="label">Cheapest 2BR</div><div class="value" id="statCheapest">$510</div><div class="sub" id="statCheapestSub">Wiley Park</div></div>
+    <div class="stat-card"><div class="label">Median 2BR</div><div class="value" id="statMedian">$775</div><div class="sub">across filtered stations</div></div>
+    <div class="stat-card"><div class="label">Most Expensive 2BR</div><div class="value" id="statExpensive">$1,225</div><div class="sub" id="statExpensiveSub">Barangaroo</div></div>
+  </div>
+
+  <!-- Charts -->
+  <div class="grid-2">
+    <div class="card">
+      <h3>2BR Median Rent by Station ($/week)</h3>
+      <div class="chart-container"><canvas id="chart2br"></canvas></div>
+    </div>
+    <div class="card">
+      <h3>3BR Median Rent by Station ($/week)</h3>
+      <div class="chart-container"><canvas id="chart3br"></canvas></div>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <h3>Rent Distribution by Line Segment</h3>
+      <div class="chart-container"><canvas id="chartSegment"></canvas></div>
+    </div>
+    <div class="card">
+      <h3>Hospital Coverage Map</h3>
+      <div style="overflow-y:auto; max-height:380px;">
+        <table>
+          <thead><tr><th>Hospital</th><th>Type</th><th>Stations Served</th></tr></thead>
+          <tbody id="hospitalTable"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Hospital Driving Analysis -->
+  <div class="card" style="margin-bottom:24px">
+    <h3>All Major Teaching Hospitals — Drive Time to Nearest Metro</h3>
+    <p style="font-size:13px;color:#718096;margin-bottom:12px;">For your partner's training placements. All Sydney teaching hospitals are within 30 min of a metro station <strong>except Nepean Hospital</strong>.</p>
+    <div class="table-scroll" style="max-height:500px">
+      <table>
+        <thead><tr><th>Hospital</th><th>Type / Beds</th><th>Location</th><th>Nearest Metro</th><th>Drive</th><th>Status</th><th>Training Notes</th></tr></thead>
+        <tbody>
+          <tr><td style="font-weight:600">Royal North Shore Hospital</td><td>Major Tertiary (740)</td><td>St Leonards</td><td>Crows Nest, Victoria Cross</td><td>~3-5 min</td><td><span class="badge badge-open">✓ Easy</span></td><td style="font-size:12px;color:#718096">Major trauma, burns, spinal, neonatal ICU</td></tr>
+          <tr><td style="font-weight:600">St Vincents Hospital</td><td>Major Tertiary</td><td>Darlinghurst</td><td>Gadigal, Martin Place</td><td>~5-8 min</td><td><span class="badge badge-open">✓ Easy</span></td><td style="font-size:12px;color:#718096">Cardiac, transplant, HIV/AIDS</td></tr>
+          <tr><td style="font-weight:600">Royal Prince Alfred (RPA)</td><td>Major Tertiary</td><td>Camperdown</td><td>Central, Waterloo</td><td>~8-12 min</td><td><span class="badge badge-open">✓ OK</span></td><td style="font-size:12px;color:#718096">Major trauma, neurosurgery, transplant. Principal USyd hospital</td></tr>
+          <tr><td style="font-weight:600">Ryde Hospital</td><td>District</td><td>Eastwood</td><td>North Ryde, Macquarie Park, Epping</td><td>~5-8 min</td><td><span class="badge badge-open">✓ Easy</span></td><td style="font-size:12px;color:#718096">Geriatrics, rehab, general medicine</td></tr>
+          <tr><td style="font-weight:600">Canterbury Hospital</td><td>District (217)</td><td>Campsie</td><td>Canterbury (H2 2026)</td><td>~2 min / walk</td><td><span class="badge badge-open">✓ Easy</span></td><td style="font-size:12px;color:#718096">Gen medicine, surgery, paeds. Metro at doorstep</td></tr>
+          <tr><td style="font-weight:600">Bankstown-Lidcombe Hospital</td><td>District</td><td>Bankstown</td><td>Bankstown (H2 2026)</td><td>~8-10 min</td><td><span class="badge badge-open">✓ OK</span></td><td style="font-size:12px;color:#718096">UNSW affiliated, BPT rotations, renal dialysis</td></tr>
+          <tr><td style="font-weight:600">Liverpool Hospital</td><td>Major Tertiary (855)</td><td>Liverpool</td><td>Bankstown (H2 2026)</td><td>~13 min</td><td><span class="badge badge-open">✓ OK</span></td><td style="font-size:12px;color:#718096">Largest NSW hospital. Major trauma centre</td></tr>
+          <tr><td style="font-weight:600">Westmead Hospital</td><td>Major Tertiary (975)</td><td>Westmead</td><td>Tallawong, Rouse Hill</td><td>~20-25 min</td><td><span class="badge badge-affordable">✓ Doable</span></td><td style="font-size:12px;color:#718096">Largest W. Sydney teaching hosp. Metro West station coming 2032</td></tr>
+          <tr><td style="font-weight:600">Prince of Wales Hospital</td><td>Major Tertiary</td><td>Randwick</td><td>Waterloo, Central</td><td>~15-20 min</td><td><span class="badge badge-affordable">✓ Doable</span></td><td style="font-size:12px;color:#718096">UNSW teaching hospital. Eastern suburbs</td></tr>
+          <tr><td style="font-weight:600">St George Hospital</td><td>Major Tertiary (547)</td><td>Kogarah</td><td>Sydenham</td><td>~12-15 min</td><td><span class="badge badge-open">✓ OK</span></td><td style="font-size:12px;color:#718096">Southern Sydney. UNSW affiliated</td></tr>
+          <tr><td style="font-weight:600">Concord Hospital</td><td>Major Tertiary</td><td>Concord</td><td>Sydenham, Central</td><td>~15-18 min</td><td><span class="badge badge-affordable">✓ Doable</span></td><td style="font-size:12px;color:#718096">Inner West. USyd affiliated. Metro West (2032) will help</td></tr>
+          <tr><td style="font-weight:600">Blacktown Hospital</td><td>Major District</td><td>Blacktown</td><td>Tallawong, Rouse Hill</td><td>~15-20 min</td><td><span class="badge badge-affordable">✓ Doable</span></td><td style="font-size:12px;color:#718096">24hr ED, ICU. WSLHD surgical training network</td></tr>
+          <tr><td style="font-weight:600">Hornsby Hospital</td><td>District</td><td>Hornsby</td><td>Cherrybrook</td><td>~12-15 min</td><td><span class="badge badge-open">✓ OK</span></td><td style="font-size:12px;color:#718096">ED, maternity, rehab</td></tr>
+          <tr><td style="font-weight:600">Sutherland Hospital</td><td>District</td><td>Caringbah</td><td>Sydenham</td><td>~16 min</td><td><span class="badge badge-affordable">✓ Doable</span></td><td style="font-size:12px;color:#718096">Southern suburbs, manageable drive</td></tr>
+          <tr><td style="font-weight:600">Auburn Hospital</td><td>District</td><td>Auburn</td><td>Bankstown, Sydenham</td><td>~15-20 min</td><td><span class="badge badge-affordable">✓ Doable</span></td><td style="font-size:12px;color:#718096">Planned surgery, paeds, obstetrics</td></tr>
+          <tr style="background:#fff5f5"><td style="font-weight:600;color:#c53030">Nepean Hospital</td><td>Major Tertiary</td><td>Kingswood/Penrith</td><td>Tallawong</td><td style="color:#c53030;font-weight:600">~30-45 min</td><td><span class="badge badge-premium">⚠ Borderline</span></td><td style="font-size:12px;color:#c53030">Far western Sydney. In peak traffic, exceeds 30 min. Consider T1 Western Line instead of Metro.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Full Table -->
+  <div class="card" style="margin-bottom:24px">
+    <h3>Full Station Comparison</h3>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Line</th><th>Station</th><th>Status</th>
+            <th>2BR $/wk</th><th>3BR $/wk</th><th>Tier</th>
+            <th>Nearest Hospital</th><th>Dist</th><th>Notes</th>
+          </tr>
+        </thead>
+        <tbody id="mainTable"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="note">
+    <strong>Disclaimer:</strong> Rent figures are estimates based on median data from CoreLogic, SydneyMovingGuide, RealEstateInvestar, and current listings (Q3-Q4 2025).
+    Actual rents vary by property condition, age, floor level, and exact location. Southwest line stations (Marrickville–Bankstown) expected to open H2 2026 but subject to delays.
+    Always verify current rents on Domain.com.au or RealEstate.com.au. Hospital distances are approximate.
+  </div>
+</div>
+
+<script>
+const DATA = [
+  {line:"M1 North West",station:"Tallawong",suburb:"Tallawong",status:"Open",r2l:550,r2h:650,r3l:700,r3h:850,hospital:"Westmead Hospital",dist:"~15km",notes:"Newest suburb, growing rapidly"},
+  {line:"M1 North West",station:"Rouse Hill",suburb:"Rouse Hill",status:"Open",r2l:600,r2h:700,r3l:750,r3h:900,hospital:"Westmead Hospital",dist:"~14km",notes:"Major town centre, good retail"},
+  {line:"M1 North West",station:"Kellyville",suburb:"Kellyville",status:"Open",r2l:620,r2h:720,r3l:780,r3h:920,hospital:"Westmead Hospital",dist:"~12km",notes:"Family-friendly, newer builds"},
+  {line:"M1 North West",station:"Bella Vista",suburb:"Bella Vista",status:"Open",r2l:650,r2h:750,r3l:800,r3h:950,hospital:"Westmead Hospital",dist:"~10km",notes:"Near Norwest Business Park"},
+  {line:"M1 North West",station:"Hills Showground",suburb:"Castle Hill",status:"Open",r2l:650,r2h:750,r3l:800,r3h:950,hospital:"Westmead Hospital",dist:"~11km",notes:"Adjacent to Castle Towers"},
+  {line:"M1 North West",station:"Castle Hill",suburb:"Castle Hill",status:"Open",r2l:680,r2h:780,r3l:800,r3h:950,hospital:"Westmead Hospital",dist:"~10km",notes:"Established suburb, premium"},
+  {line:"M1 North West",station:"Cherrybrook",suburb:"Cherrybrook",status:"Open",r2l:700,r2h:850,r3l:850,r3h:1050,hospital:"Hornsby Hospital",dist:"~7km",notes:"Leafy, family area, limited units"},
+  {line:"M1 North West",station:"Epping",suburb:"Epping",status:"Open",r2l:700,r2h:800,r3l:850,r3h:1000,hospital:"Ryde Hospital",dist:"~4km",notes:"Also on T1 train line"},
+  {line:"M1 North West",station:"Macquarie Uni",suburb:"Macquarie Park",status:"Open",r2l:750,r2h:850,r3l:900,r3h:1050,hospital:"Ryde Hospital",dist:"~3km",notes:"Student/tech hub"},
+  {line:"M1 North West",station:"Macquarie Park",suburb:"Macquarie Park",status:"Open",r2l:750,r2h:850,r3l:900,r3h:1050,hospital:"Ryde Hospital",dist:"~3km",notes:"Business park, new apartments"},
+  {line:"M1 North West",station:"North Ryde",suburb:"North Ryde",status:"Open",r2l:720,r2h:820,r3l:880,r3h:1020,hospital:"Ryde Hospital",dist:"~2km",notes:"Close to hospital"},
+  {line:"M1 North West",station:"Delhi Road",suburb:"North Ryde",status:"Open",r2l:720,r2h:820,r3l:880,r3h:1020,hospital:"RNSH",dist:"~5km",notes:"Limited residential"},
+  {line:"M1 North West",station:"Chatswood",suburb:"Chatswood",status:"Open",r2l:850,r2h:950,r3l:1100,r3h:1300,hospital:"RNSH",dist:"~2km",notes:"Major centre, premium"},
+  {line:"M1 City",station:"Crows Nest",suburb:"Crows Nest",status:"Open",r2l:950,r2h:1050,r3l:1200,r3h:1400,hospital:"RNSH",dist:"~1.5km",notes:"Trendy, walkable to RNSH"},
+  {line:"M1 City",station:"Victoria Cross",suburb:"North Sydney",status:"Open",r2l:900,r2h:1050,r3l:1200,r3h:1450,hospital:"RNSH",dist:"~2km",notes:"Corporate hub"},
+  {line:"M1 City",station:"Barangaroo",suburb:"Barangaroo",status:"Open",r2l:1100,r2h:1350,r3l:1500,r3h:1850,hospital:"St Vincents",dist:"~3km",notes:"Premium waterfront"},
+  {line:"M1 City",station:"Martin Place",suburb:"Sydney CBD",status:"Open",r2l:1050,r2h:1300,r3l:1400,r3h:1800,hospital:"St Vincents",dist:"~2km",notes:"Heart of CBD"},
+  {line:"M1 City",station:"Gadigal",suburb:"Surry Hills",status:"Open",r2l:1000,r2h:1200,r3l:1300,r3h:1600,hospital:"St Vincents",dist:"~1.5km",notes:"Near Oxford St"},
+  {line:"M1 City",station:"Central",suburb:"Haymarket",status:"Open",r2l:900,r2h:1100,r3l:1200,r3h:1500,hospital:"RPA",dist:"~2km",notes:"Major transport hub"},
+  {line:"M1 City",station:"Waterloo",suburb:"Waterloo",status:"Open",r2l:850,r2h:1000,r3l:1100,r3h:1350,hospital:"RPA",dist:"~3km",notes:"Urban renewal area"},
+  {line:"M1 City",station:"Sydenham",suburb:"Sydenham",status:"Open",r2l:750,r2h:880,r3l:950,r3h:1150,hospital:"RPA",dist:"~4km",notes:"Inner West fringe"},
+  {line:"M1 Southwest",station:"Marrickville",suburb:"Marrickville",status:"Opening H2 2026",r2l:720,r2h:820,r3l:900,r3h:1050,hospital:"RPA",dist:"~3km",notes:"Trendy Inner West"},
+  {line:"M1 Southwest",station:"Dulwich Hill",suburb:"Dulwich Hill",status:"Opening H2 2026",r2l:650,r2h:750,r3l:800,r3h:920,hospital:"Canterbury Hospital",dist:"~3km",notes:"Quiet, family-friendly"},
+  {line:"M1 Southwest",station:"Hurlstone Park",suburb:"Hurlstone Park",status:"Opening H2 2026",r2l:620,r2h:700,r3l:780,r3h:900,hospital:"Canterbury Hospital",dist:"~2km",notes:"Small, charming"},
+  {line:"M1 Southwest",station:"Canterbury",suburb:"Canterbury",status:"Opening H2 2026",r2l:580,r2h:680,r3l:750,r3h:880,hospital:"Canterbury Hospital",dist:"~0.5km",notes:"Very close to hospital"},
+  {line:"M1 Southwest",station:"Campsie",suburb:"Campsie",status:"Opening H2 2026",r2l:550,r2h:650,r3l:700,r3h:850,hospital:"Canterbury Hospital",dist:"~2km",notes:"Diverse, great food"},
+  {line:"M1 Southwest",station:"Belmore",suburb:"Belmore",status:"Opening H2 2026",r2l:520,r2h:620,r3l:680,r3h:820,hospital:"Canterbury Hospital",dist:"~3km",notes:"Affordable, multicultural"},
+  {line:"M1 Southwest",station:"Lakemba",suburb:"Lakemba",status:"Opening H2 2026",r2l:480,r2h:560,r3l:620,r3h:780,hospital:"Canterbury Hospital",dist:"~4km",notes:"Most affordable on line"},
+  {line:"M1 Southwest",station:"Wiley Park",suburb:"Wiley Park",status:"Opening H2 2026",r2l:470,r2h:550,r3l:600,r3h:750,hospital:"Bankstown-Lidcombe",dist:"~4km",notes:"Very affordable"},
+  {line:"M1 Southwest",station:"Punchbowl",suburb:"Punchbowl",status:"Opening H2 2026",r2l:480,r2h:570,r3l:630,r3h:790,hospital:"Bankstown-Lidcombe",dist:"~3km",notes:"Affordable, improving"},
+  {line:"M1 Southwest",station:"Bankstown",suburb:"Bankstown",status:"Opening H2 2026",r2l:550,r2h:650,r3l:700,r3h:850,hospital:"Bankstown-Lidcombe",dist:"~3km",notes:"Major centre, hospital via bus"},
+];
+
+const LINE_COLORS = {
+  "M1 North West": {bg:"rgba(59,130,246,0.7)", border:"#3b82f6"},
+  "M1 City": {bg:"rgba(139,92,246,0.7)", border:"#8b5cf6"},
+  "M1 Southwest": {bg:"rgba(16,185,129,0.7)", border:"#10b981"},
+};
+
+function getTier(mid2br) {
+  if (mid2br < 600) return "Budget";
+  if (mid2br < 750) return "Affordable";
+  if (mid2br < 900) return "Mid-Range";
+  if (mid2br < 1100) return "Premium";
+  return "Ultra Premium";
+}
+
+function tierBadge(tier) {
+  const cls = {Budget:"badge-budget",Affordable:"badge-affordable","Mid-Range":"badge-mid",Premium:"badge-premium","Ultra Premium":"badge-ultra"};
+  return `<span class="badge ${cls[tier]||''}">${tier}</span>`;
+}
+
+function statusBadge(s) {
+  return s === "Open" ? '<span class="badge badge-open">Open</span>' : '<span class="badge badge-future">H2 2026</span>';
+}
+
+let chart2br, chart3br, chartSeg;
+
+function getFiltered() {
+  let d = [...DATA];
+  const line = document.getElementById('filterLine').value;
+  const budget = document.getElementById('filterBudget').value;
+  const status = document.getElementById('filterStatus').value;
+  const tier = document.getElementById('filterTier').value;
+
+  if (line !== 'all') d = d.filter(r => r.line === line);
+  if (budget) d = d.filter(r => (r.r2l + r.r2h)/2 <= parseInt(budget));
+  if (status === 'open') d = d.filter(r => r.status === 'Open');
+  if (status === 'future') d = d.filter(r => r.status !== 'Open');
+  if (tier !== 'all') d = d.filter(r => getTier((r.r2l+r.r2h)/2) === tier);
+  return d;
+}
+
+function applyFilters() {
+  const filtered = getFiltered();
+  updateStats(filtered);
+  updateCharts(filtered);
+  updateTable(filtered);
+  updateHospitalTable(filtered);
+}
+
+function updateStats(data) {
+  document.getElementById('statCount').textContent = data.length;
+  if (data.length === 0) {
+    document.getElementById('statCheapest').textContent = '-';
+    document.getElementById('statMedian').textContent = '-';
+    document.getElementById('statExpensive').textContent = '-';
+    return;
+  }
+  const mids = data.map(r => (r.r2l+r.r2h)/2).sort((a,b)=>a-b);
+  const cheapest = data.reduce((a,b) => ((a.r2l+a.r2h)/2 < (b.r2l+b.r2h)/2 ? a : b));
+  const expensive = data.reduce((a,b) => ((a.r2l+a.r2h)/2 > (b.r2l+b.r2h)/2 ? a : b));
+  const median = mids[Math.floor(mids.length/2)];
+
+  document.getElementById('statCheapest').textContent = '$'+Math.round((cheapest.r2l+cheapest.r2h)/2).toLocaleString();
+  document.getElementById('statCheapestSub').textContent = cheapest.station;
+  document.getElementById('statMedian').textContent = '$'+Math.round(median).toLocaleString();
+  document.getElementById('statExpensive').textContent = '$'+Math.round((expensive.r2l+expensive.r2h)/2).toLocaleString();
+  document.getElementById('statExpensiveSub').textContent = expensive.station;
+}
+
+function updateCharts(data) {
+  const labels = data.map(r => r.station);
+  const bg2 = data.map(r => LINE_COLORS[r.line].bg);
+  const bd2 = data.map(r => LINE_COLORS[r.line].border);
+
+  if (chart2br) chart2br.destroy();
+  if (chart3br) chart3br.destroy();
+  if (chartSeg) chartSeg.destroy();
+
+  const opts = {indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}},
+    scales:{x:{ticks:{callback:v=>'$'+v}}}};
+
+  chart2br = new Chart(document.getElementById('chart2br'), {
+    type:'bar', data:{labels, datasets:[{data:data.map(r=>(r.r2l+r.r2h)/2), backgroundColor:bg2, borderColor:bd2, borderWidth:1}]},
+    options:opts
+  });
+
+  chart3br = new Chart(document.getElementById('chart3br'), {
+    type:'bar', data:{labels, datasets:[{data:data.map(r=>(r.r3l+r.r3h)/2), backgroundColor:bg2, borderColor:bd2, borderWidth:1}]},
+    options:opts
+  });
+
+  // Segment averages
+  const segments = ["M1 North West","M1 City","M1 Southwest"];
+  const seg2br = segments.map(s => {
+    const f = data.filter(r=>r.line===s);
+    return f.length ? f.reduce((a,r)=>a+(r.r2l+r.r2h)/2,0)/f.length : 0;
+  });
+  const seg3br = segments.map(s => {
+    const f = data.filter(r=>r.line===s);
+    return f.length ? f.reduce((a,r)=>a+(r.r3l+r.r3h)/2,0)/f.length : 0;
+  });
+
+  chartSeg = new Chart(document.getElementById('chartSegment'), {
+    type:'bar', data:{labels:['North West','City','Southwest'],
+      datasets:[
+        {label:'Avg 2BR',data:seg2br,backgroundColor:'rgba(59,130,246,0.7)'},
+        {label:'Avg 3BR',data:seg3br,backgroundColor:'rgba(139,92,246,0.7)'}
+      ]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top'}},
+      scales:{y:{ticks:{callback:v=>'$'+v}}}}
+  });
+}
+
+function updateTable(data) {
+  const tb = document.getElementById('mainTable');
+  tb.innerHTML = data.map(r => {
+    const mid2 = Math.round((r.r2l+r.r2h)/2);
+    const mid3 = Math.round((r.r3l+r.r3h)/2);
+    return `<tr>
+      <td>${r.line.replace('M1 ','')}</td>
+      <td class="station-name">${r.station}</td>
+      <td>${statusBadge(r.status)}</td>
+      <td>$${mid2.toLocaleString()}<br><span style="font-size:11px;color:#a0aec0">($${r.r2l}–$${r.r2h})</span></td>
+      <td>$${mid3.toLocaleString()}<br><span style="font-size:11px;color:#a0aec0">($${r.r3l}–$${r.r3h})</span></td>
+      <td>${tierBadge(getTier(mid2))}</td>
+      <td>${r.hospital}<br><span class="hospital-tag">${r.dist}</span></td>
+      <td>${r.dist}</td>
+      <td style="font-size:12px;color:#718096">${r.notes}</td>
+    </tr>`;
+  }).join('');
+}
+
+function updateHospitalTable(data) {
+  const hospMap = {};
+  data.forEach(r => {
+    if (!hospMap[r.hospital]) hospMap[r.hospital] = {stations:[], type:''};
+    hospMap[r.hospital].stations.push(r.station);
+  });
+  const types = {
+    'Westmead Hospital':'Major Tertiary','Hornsby Hospital':'District','Ryde Hospital':'District',
+    'RNSH':'Major Tertiary','Royal North Shore Hospital':'Major Tertiary',
+    'St Vincents':'Major Tertiary','RPA':'Major Tertiary','Royal Prince Alfred Hospital':'Major Tertiary',
+    'Canterbury Hospital':'District','Bankstown-Lidcombe':'District'
+  };
+  const tb = document.getElementById('hospitalTable');
+  tb.innerHTML = Object.entries(hospMap).map(([h,v]) =>
+    `<tr><td style="font-weight:600">${h}</td><td>${types[h]||'Public'}</td><td>${v.stations.join(', ')}</td></tr>`
+  ).join('');
+}
+
+// Initial render
+applyFilters();
+</script>
+</body>
+</html>
